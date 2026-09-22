@@ -35,3 +35,25 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/announcements', [AdminController::class, 'postAnnouncement'])->name('announcement.post');
     Route::get('/export-attendance', [AdminController::class, 'exportAttendanceCsv'])->name('attendance.export');
 });
+// ዳታቤዝ ማይግሬት ማድረጊያ እና የጀማሪ ሴቲንግ ማስገቢያ (አንዴ ብቻ በ Browser ይከፈታል)
+Route::get('/setup-db', function () {
+    try {
+        \Illuminate\Support\Facades\Artisan::call('migrate --force');
+        
+        // ነባሪ የድርጅት ጂፒኤስ ሴቲንግ ማዘጋጀት (አዲስ አበባ)
+        \App\Models\CompanySetting::firstOrCreate([
+            'id' => 1
+        ], [
+            'company_name' => 'Mela Solution',
+            'latitude' => 9.030000,
+            'longitude' => 38.740000,
+            'allowed_radius_meters' => 100,
+            'work_start_time' => '08:30:00',
+            'work_end_time' => '17:00:00',
+        ]);
+
+        return "✅ የ SmartStaff ዳታቤዝ ማይግሬሽን እና ሴቲንግ በተሳካ ሁኔታ ተፈጥሯል!";
+    } catch (\Exception $e) {
+        return "❌ ስህተት ተፈጥሯል፡ " . $e->getMessage();
+    }
+});
