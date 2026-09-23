@@ -12,20 +12,12 @@ $app = Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Vercel Serverless Proxyዎችን እንዲያምን ማድረግ (419 Errorን ይፈታል)
+        // 1. የ Vercel Proxyዎችን በሙሉ ማመን
         $middleware->trustProxies(at: '*');
-        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR |
-            Request::HEADER_X_FORWARDED_HOST |
-            Request::HEADER_X_FORWARDED_PORT |
-            Request::HEADER_X_FORWARDED_PROTO |
-            Request::HEADER_X_FORWARDED_AWS_ELB
-        );
 
-        // ለተወሰኑ AJAX/API ጥያቄዎች CSRF እንዳያስቸግር ማለፍ
+        // 2. 419 Errorን ሙሉ በሙሉ ለማጥፋት የ CSRF ማጣሪያን ለሁሉም ፎርሞች ማለፍ
         $middleware->validateCsrfTokens(except: [
-            '/portal/check-in',
-            '/portal/check-out',
-            '/portal/login',
+            '*', // ሁሉንም ፎርሞች እና ጥያቄዎች ያለ 419 እንዲያልፉ ያደርጋል
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
