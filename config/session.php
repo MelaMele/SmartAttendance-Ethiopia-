@@ -1,25 +1,19 @@
 <?php
 
-use Illuminate\Support\Str;
-
 return [
-    'driver' => env('SESSION_DRIVER', 'cookie'),
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    'driver' => 'cookie',
+    'lifetime' => 120,
     'expire_on_close' => false,
     'encrypt' => false,
     'files' => '/tmp/storage/framework/sessions',
-    'connection' => env('SESSION_CONNECTION'),
-    'table' => env('SESSION_TABLE', 'sessions'),
-    'store' => env('SESSION_STORE'),
+    'connection' => null,
+    'table' => 'sessions',
+    'store' => null,
     'lottery' => [2, 100],
-    'cookie' => env(
-        'SESSION_COOKIE',
-        Str::slug(env('APP_NAME', 'smartstaff'), '_').'_session'
-    ),
+    'cookie' => 'smartstaff_session',
     'path' => '/',
-    'domain' => env('SESSION_DOMAIN'),
-    'secure' => env('SESSION_SECURE_COOKIE', false),
+    'domain' => null,
+    'secure' => false,
     'http_only' => true,
     'same_site' => 'lax',
-    'partitioned' => false,
-]
+];
