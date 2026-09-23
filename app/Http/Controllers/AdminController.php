@@ -10,11 +10,9 @@ use App\Models\Announcement;
 use App\Services\EthiopianCalendarService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
-    // ዋናው የአድሚን ዳሽቦርድ
     public function dashboard(Request $request)
     {
         $todayGc = Carbon::today('Africa/Addis_Ababa')->toDateString();
@@ -25,44 +23,49 @@ class AdminController extends Controller
             'latitude' => 9.030000,
             'longitude' => 38.740000,
             'allowed_radius_meters' => 100,
+            'work_start_time' => '08:30:00',
+            'work_end_time' => '17:00:00',
         ]);
 
-        $totalEmployees = Employee::where('is_active', true)->count();
+        $employees = Employee::where('is_active', true)->get();
+        $totalEmployees = $employees->count();
 
-        // የዛሬ አቴንዳንስ ስታቲስቲክስ
+        // ዛሬ በጸደቀ ፈቃድ ላይ ያሉ ሰራተኞች
+        $onLeaveToday = LeaveRequest::with('employee')
+            ->where('status', 'approved')
+            ->where('start_date_gc', '<=', $todayGc)
+            ->where('end_date_gc', '>=', $todayGc)
+            ->get();
+
         $todayAttendances = Attendance::with('employee')
             ->where('date_gc', $todayGc)
             ->get();
 
         $presentCount = $todayAttendances->where('status', 'present')->count();
         $lateCount = $todayAttendances->where('status', 'late')->count();
-        $checkedInCount = $todayAttendances->count();
-        $absentCount = max(0, $totalEmployees - $checkedInCount);
+        $onLeaveCount = $onLeaveToday->count();
+        $absentCount = max(0, $totalEmployees - ($todayAttendances->count() + $onLeaveCount));
 
-        // የመጡ የፈቃድ ጥያቄዎች
         $pendingLeaves = LeaveRequest::with('employee')
             ->where('status', 'pending')
             ->latest()
             ->get();
 
-        // የቅርብ ማስታወቂያዎች
-        $announcements = Announcement::latest()->take(5)->get();
+        $announcements = Announcement::with('employee')->latest()->take(6)->get();
 
         return view('admin.dashboard', compact(
-            'todayGc', 'todayEc', 'setting', 'totalEmployees',
-            'presentCount', 'lateCount', 'absentCount',
-            'todayAttendances', 'pendingLeaves', 'announcements'
+            'todayGc', 'todayEc', 'setting', 'employees', 'totalEmployees',
+            'presentCount', 'lateCount', 'onLeaveCount', 'absentCount',
+            'todayAttendances', 'onLeaveToday', 'pendingLeaves', 'announcements'
         ));
     }
 
-    // የሰራተኞች ዝርዝር እና መመዝገቢያ ገጽ
     public function employees()
     {
         $employees = Employee::latest()->paginate(15);
         return view('admin.employees', compact('employees'));
     }
 
-    // አዲስ ሰራተኛ መመዝገብ
     public function storeEmployee(Request $request)
     {
         $request->validate([
@@ -72,7 +75,6 @@ class AdminController extends Controller
             'position'     => 'nullable|string',
         ]);
 
-        // 6 አሃዝ የይለፍ ኮድ በዘፈቀደ ማመንጨት (Random 6-digit Code)
         $accessCode = rand(100000, 999999);
 
         Employee::create([
@@ -87,7 +89,6 @@ class AdminController extends Controller
         return back()->with('success', "ሰራተኛው ተመዝግቧል! የመግቢያ ኮድ፡ {$accessCode}");
     }
 
-    // የድርጅት የጂፒኤስ አጥር (100 ሜትር) ማስተካከያ
     public function updateGeofence(Request $request)
     {
         $request->validate([
@@ -96,6 +97,7 @@ class AdminController extends Controller
             'longitude'             => 'required|numeric',
             'allowed_radius_meters' => 'required|integer|min:10|max:1000',
             'work_start_time'       => 'required',
+            'work_end_time'         => 'required',
         ]);
 
         $setting = CompanySetting::first() ?? new CompanySetting();
@@ -105,7 +107,6 @@ class AdminController extends Controller
         return back()->with('success', 'የጂፒኤስ አጥር እና የስራ ሰዓት ቅንብር በተሳካ ሁኔታ ተቀይሯል!');
     }
 
-    // የፈቃድ ጥያቄ መወሰን (መፍቀድ / መከልከል)
     public function updateLeaveStatus(Request $request, $id)
     {
         $request->validate([
@@ -119,32 +120,42 @@ class AdminController extends Controller
             'admin_remark' => $request->admin_remark,
         ]);
 
-        return back()->with('success', "የፈቃድ ጥያቄው ውሳኔ ተመዝግቧል ({$request->status})!");
+        return back()->with('success', "የፈቃድ ጥያቄው ውሳኔ ተመዝግቧል!");
     }
 
-    // አዲስ አጠቃላይ ማስታወቂያ መለጠፍ
+    // ቀድሞ የመውጣት ምክንያት ማጽደቅ
+    public function approveEarlyLeave($id)
+    {
+        $attendance = Attendance::findOrFail($id);
+        $attendance->update(['early_leave_approved' => true]);
+        return back()->with('success', 'ቀድሞ የመውጣት ጥያቄው ጸድቋል!');
+    }
+
+    // ማስታወቂያ ወይም ለእያንዳንዱ ሰራተኛ ለብቻው መልእክት መላኪያ
     public function postAnnouncement(Request $request)
     {
         $request->validate([
-            'title'    => 'required|string|max:255',
-            'message'  => 'required|string',
-            'priority' => 'required|in:normal,urgent,info'
+            'title'       => 'required|string|max:255',
+            'message'     => 'required|string',
+            'employee_id' => 'nullable', // ባዶ ከሆነ ለሁሉም፣ ቁጥር ከሆነ ለተመረጠው
+            'priority'    => 'required|in:normal,urgent,info'
         ]);
 
         $today = Carbon::today('Africa/Addis_Ababa');
 
         Announcement::create([
-            'title'    => $request->title,
-            'message'  => $request->message,
-            'priority' => $request->priority,
-            'date_gc'  => $today->toDateString(),
-            'date_ec'  => EthiopianCalendarService::todayFormatted()
+            'title'       => $request->title,
+            'message'     => $request->message,
+            'priority'    => $request->priority,
+            'employee_id' => $request->employee_id === 'all' ? null : $request->employee_id,
+            'date_gc'     => $today->toDateString(),
+            'date_ec'     => EthiopianCalendarService::todayFormatted()
         ]);
 
-        return back()->with('success', 'ማስታወቂያው ለሁሉም ሰራተኞች ዳሽቦርድ ተላልፏል!');
+        $target = $request->employee_id === 'all' || empty($request->employee_id) ? "ለሁሉም ሰራተኞች" : "ለተመረጠው ሰራተኛ";
+        return back()->with('success', "መልእክቱ {$target} በተሳካ ሁኔታ ተላልፏል!");
     }
 
-    // ሪፖርት ማውረጃ (CSV/Excel)
     public function exportAttendanceCsv()
     {
         $fileName = 'attendance_report_' . date('Y-m-d') . '.csv';
@@ -158,11 +169,11 @@ class AdminController extends Controller
             "Expires"             => "0"
         ];
 
-        $columns = ['የሰራተኛ ስም', 'ስልክ ቁጥር', 'ቀን (ዓ.ም)', 'ቀን (G.C)', 'የመግቢያ ሰዓት', 'Check-in ርቀት (ሜትር)', 'የመውጫ ሰዓት', 'ሁኔታ'];
+        $columns = ['የሰራተኛ ስም', 'ስልክ ቁጥር', 'ቀን (ዓ.ም)', 'የመግቢያ ሰዓት', 'ርቀት (ሜ)', 'የመውጫ ሰዓት', 'ቀድሞ የወጣበት ምክንያት', 'ሁኔታ'];
 
         $callback = function() use($attendances, $columns) {
             $file = fopen('php://output', 'w');
-            fputs($file, "\xEF\xBB\xBF"); // UTF-8 BOM ለግዕዝ ፊደላት እንዳይዛቡ
+            fputs($file, "\xEF\xBB\xBF");
             fputcsv($file, $columns);
 
             foreach ($attendances as $row) {
@@ -170,10 +181,10 @@ class AdminController extends Controller
                     $row->employee->full_name ?? '',
                     $row->employee->phone_number ?? '',
                     $row->date_ec,
-                    $row->date_gc->toDateString(),
                     $row->check_in_at ? $row->check_in_at->format('h:i A') : '-',
                     $row->check_in_distance_meters ?? '-',
                     $row->check_out_at ? $row->check_out_at->format('h:i A') : '-',
+                    $row->early_leave_reason ?? '-',
                     $row->status,
                 ]);
             }
