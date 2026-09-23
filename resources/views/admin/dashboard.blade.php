@@ -122,7 +122,6 @@
                                 </tr>
                             @endforelse
 
-                            <!-- በፈቃድ ላይ ያሉ ሰራተኞች ዝርዝር -->
                             @foreach($onLeaveToday as $lv)
                                 <tr class="bg-blue-950/20">
                                     <td class="p-3 font-semibold text-white">
@@ -140,8 +139,62 @@
                 </div>
             </div>
 
-            <!-- Controls (Messages & GPS) -->
+            <!-- Controls (1-Click Auto GPS & Messages) -->
             <div class="space-y-6">
+
+                <!-- 1-Click Auto GPS & Shift Timing Settings Form -->
+                <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-bold text-white flex items-center gap-1.5">
+                            🌐 የ 100m ጂፒኤስ እና የስራ ሰዓት
+                        </h3>
+                    </div>
+
+                    <!-- 1-CLICK AUTO GPS BUTTON -->
+                    <div class="mb-4 p-3 bg-blue-950/50 border border-blue-800/60 rounded-2xl">
+                        <p class="text-[11px] text-blue-300 mb-2">ቢሮው ውስጥ ሆነው ይህችን ቁልፍ ሲጫኑ ስልኩ/ኮምፒውተሩ ትክክለኛውን ቦታ ወዲያው ይሞላዋል፡</p>
+                        <button type="button" onclick="captureAdminLocation()" id="gpsCaptureBtn"
+                                class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition">
+                            <span>📍 ያለሁበትን ቦታ እንደ ድርጅቱ GPS ውሰድ (1-Click)</span>
+                        </button>
+                        <p id="gpsCaptureMsg" class="text-[10px] text-center text-emerald-400 mt-1.5 hidden"></p>
+                    </div>
+
+                    <form action="{{ route('admin.geofence.update') }}" method="POST" class="space-y-3 text-xs">
+                        @csrf
+                        <div>
+                            <label class="block text-slate-400 mb-1">የድርጅት ስም</label>
+                            <input type="text" name="company_name" value="{{ $setting->company_name }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-slate-400 mb-1">ኬክሮስ (Lat)</label>
+                                <input type="text" id="adminLat" name="latitude" value="{{ $setting->latitude }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 mb-1">ኬንትሮስ (Lng)</label>
+                                <input type="text" id="adminLng" name="longitude" value="{{ $setting->longitude }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-slate-400 mb-1">መግቢያ ሰዓት</label>
+                                <input type="time" name="work_start_time" value="{{ $setting->work_start_time }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 mb-1">መውጫ ሰዓት</label>
+                                <input type="time" name="work_end_time" value="{{ $setting->work_end_time }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">የተፈቀደ ራዲየስ (ሜትር)</label>
+                            <input type="number" name="allowed_radius_meters" value="{{ $setting->allowed_radius_meters }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
+                        </div>
+                        <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 font-bold text-white rounded-xl transition">
+                            ቅንብሩን መዝግብ / Save
+                        </button>
+                    </form>
+                </div>
 
                 <!-- 1-on-1 & Broadcast Messaging Box -->
                 <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
@@ -174,46 +227,6 @@
                                 ላክ
                             </button>
                         </div>
-                    </form>
-                </div>
-
-                <!-- GPS & Shift Timing Settings Form -->
-                <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-                    <h3 class="text-xs font-bold text-white mb-3 flex items-center gap-2">
-                        🌐 የ 100m ጂፒኤስ እና የስራ ሰዓት ቅንብር
-                    </h3>
-                    <form action="{{ route('admin.geofence.update') }}" method="POST" class="space-y-3 text-xs">
-                        @csrf
-                        <div>
-                            <input type="text" name="company_name" value="{{ $setting->company_name }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-slate-400 mb-1">ኬክሮስ (Lat)</label>
-                                <input type="text" name="latitude" value="{{ $setting->latitude }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
-                            </div>
-                            <div>
-                                <label class="block text-slate-400 mb-1">ኬንትሮስ (Lng)</label>
-                                <input type="text" name="longitude" value="{{ $setting->longitude }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-slate-400 mb-1">መግቢያ ሰዓት</label>
-                                <input type="time" name="work_start_time" value="{{ $setting->work_start_time }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
-                            </div>
-                            <div>
-                                <label class="block text-slate-400 mb-1">መውጫ ሰዓት</label>
-                                <input type="time" name="work_end_time" value="{{ $setting->work_end_time }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-slate-400 mb-1">የተፈቀደ ራዲየስ (ሜትር)</label>
-                            <input type="number" name="allowed_radius_meters" value="{{ $setting->allowed_radius_meters }}" required class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
-                        </div>
-                        <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 font-bold text-white rounded-xl transition">
-                            ቅንብሩን መዝግብ
-                        </button>
                     </form>
                 </div>
 
@@ -260,5 +273,44 @@
 
     </main>
 
+    <!-- 1-Click Auto GPS Capture Script -->
+    <script>
+        function captureAdminLocation() {
+            const btn = document.getElementById('gpsCaptureBtn');
+            const msg = document.getElementById('gpsCaptureMsg');
+
+            if (!navigator.geolocation) {
+                alert("ይህ መሳሪያ ጂፒኤስ አይደግፍም!");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = "<span>📍 ቦታዎን በመፈለግ ላይ...</span>";
+            msg.classList.add('hidden');
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude.toFixed(8);
+                    const lng = pos.coords.longitude.toFixed(8);
+
+                    document.getElementById('adminLat').value = lat;
+                    document.getElementById('adminLng').value = lng;
+
+                    btn.disabled = false;
+                    btn.innerHTML = "<span>✓ ቦታዎ ተይዟል! አሁን 'ቅንብሩን መዝግብ' ይጫኑ</span>";
+                    btn.className = btn.className.replace('bg-emerald-600', 'bg-blue-600');
+                    
+                    msg.innerHTML = `✅ የተገኘው መጋጠሚያ፡ Lat: ${lat}, Lng: ${lng}`;
+                    msg.classList.remove('hidden');
+                },
+                (err) => {
+                    btn.disabled = false;
+                    btn.innerHTML = "<span>📍 ያለሁበትን ቦታ እንደ ድርጅቱ GPS ውሰድ (1-Click)</span>";
+                    alert("የመሳሪያዎትን Location Permission ያብሩ ወይም ይፍቀዱ!");
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+        }
+    </script>
 </body>
 </html>
