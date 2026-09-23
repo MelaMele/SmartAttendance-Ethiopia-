@@ -14,7 +14,6 @@ use Illuminate\Http\Request;
 
 class EmployeePortalController extends Controller
 {
-    // የመግቢያ ገጽ
     public function showLogin()
     {
         if (session('employee_id')) {
@@ -23,7 +22,6 @@ class EmployeePortalController extends Controller
         return view('employee.login');
     }
 
-    // መግቢያ ማረጋገጫ (Flexible Phone Matching)
     public function login(Request $request)
     {
         $request->validate([
@@ -32,7 +30,6 @@ class EmployeePortalController extends Controller
         ]);
 
         $rawPhone = trim($request->phone_number);
-        // የስልክ ቁጥሩን የመጨረሻ 9 አሃዞች ብቻ መውሰድ (e.g. 911223344)
         $cleanPhone = substr(preg_replace('/[^0-9]/', '', $rawPhone), -9);
 
         $employee = Employee::where(function ($query) use ($cleanPhone) {
@@ -44,10 +41,9 @@ class EmployeePortalController extends Controller
             ->first();
 
         if (!$employee) {
-            return back()->with('error', 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ኮድ! እባክዎ እንደገና ይሞክሩ።')->withInput();
+            return back()->with('error', 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ኮድ!')->withInput();
         }
 
-        // Session ማስቀመጥ
         session([
             'employee_id'   => $employee->id,
             'employee_name' => $employee->full_name
@@ -57,7 +53,6 @@ class EmployeePortalController extends Controller
         return redirect()->route('employee.dashboard');
     }
 
-    // ዋና ዳሽቦርድ
     public function dashboard()
     {
         $employeeId = session('employee_id');
@@ -79,20 +74,25 @@ class EmployeePortalController extends Controller
             ->where('date_gc', $todayGc)
             ->first();
 
-        $announcements = Announcement::latest()->take(3)->get();
+        // ለዚህ ሰራተኛ ለብቻው የተላከ ወይም አጠቃላይ ማስታወቂያ
+        $announcements = Announcement::whereNull('employee_id')
+            ->orWhere('employee_id', $employee->id)
+            ->latest()
+            ->take(5)
+            ->get();
 
-        $recentAttendances = Attendance::where('employee_id', $employee->id)
-            ->latest('date_gc')
+        // የሰራተኛው የፈቃድ ጥያቄዎች ሁኔታ (የመጨረሻዎቹ 5)
+        $myLeaves = LeaveRequest::where('employee_id', $employee->id)
+            ->latest()
             ->take(5)
             ->get();
 
         return view('employee.dashboard', compact(
             'employee', 'setting', 'todayGc', 'todayEc',
-            'todayAttendance', 'announcements', 'recentAttendances'
+            'todayAttendance', 'announcements', 'myLeaves'
         ));
     }
 
-    // Check-in (100m GPS)
     public function checkIn(Request $request)
     {
         $request->validate([
@@ -101,15 +101,13 @@ class EmployeePortalController extends Controller
         ]);
 
         $employeeId = session('employee_id');
-        if (!$employeeId) {
-            return response()->json(['success' => false, 'message' => 'እባክዎ መጀመሪያ ይግቡ (Session Expired)!'], 401);
-        }
-
         $setting = CompanySetting::first() ?? CompanySetting::create([
             'company_name' => 'Mela Solution',
             'latitude' => 9.030000,
             'longitude' => 38.740000,
             'allowed_radius_meters' => 100,
+            'work_start_time' => '08:30:00',
+            'work_end_time' => '17:00:00',
         ]);
 
         $distance = GeoService::calculateDistanceInMeters(
@@ -122,7 +120,7 @@ class EmployeePortalController extends Controller
         if ($distance > $setting->allowed_radius_meters) {
             return response()->json([
                 'success' => false,
-                'message' => "ከተፈቀደው 100 ሜትር ክልል ውጭ ነዎት! አሁን ከድርጅቱ በ {$distance} ሜትር ርቀት ላይ ይገኛሉ።"
+                'message' => "ከተፈቀደው 100 ሜትር ክልል ውጭ ነዎት! (አሁን በ {$distance} ሜትር ርቀት ላይ ነዎት)"
             ], 422);
         }
 
@@ -152,12 +150,12 @@ class EmployeePortalController extends Controller
         ]);
     }
 
-    // Check-out
     public function checkOut(Request $request)
     {
         $request->validate([
             'latitude'  => 'required|numeric',
             'longitude' => 'required|numeric',
+            'early_reason' => 'nullable|string'
         ]);
 
         $employeeId = session('employee_id');
@@ -173,7 +171,7 @@ class EmployeePortalController extends Controller
         if ($distance > $setting->allowed_radius_meters) {
             return response()->json([
                 'success' => false,
-                'message' => "Check-out ለማድረግ በ 100 ሜትር ክልል ውስጥ መሆን አለብዎት! (አሁን በ {$distance} ሜትር ርቀት ላይ ነዎት)"
+                'message' => "Check-out ለማድረግ በ 100 ሜትር ክልል ውስጥ መሆን አለብዎት!"
             ], 422);
         }
 
@@ -187,7 +185,7 @@ class EmployeePortalController extends Controller
         if (!$attendance) {
             return response()->json([
                 'success' => false,
-                'message' => "መጀመሪያ ዛሬ ጠዋት Check-in አላደረጉም!"
+                'message' => "ዛሬ ጠዋት Check-in አልተደረገም!"
             ], 400);
         }
 
@@ -196,6 +194,8 @@ class EmployeePortalController extends Controller
             'check_out_lat' => $request->latitude,
             'check_out_lng' => $request->longitude,
             'check_out_distance_meters' => $distance,
+            'early_leave_reason' => $request->early_reason,
+            'early_leave_approved' => $request->early_reason ? false : null,
         ]);
 
         return response()->json([
@@ -205,7 +205,6 @@ class EmployeePortalController extends Controller
         ]);
     }
 
-    // የፈቃድ ጥያቄ ማስገቢያ
     public function submitLeave(Request $request)
     {
         $request->validate([
@@ -226,10 +225,9 @@ class EmployeePortalController extends Controller
             'status'        => 'pending'
         ]);
 
-        return back()->with('success', 'የፈቃድ ጥያቄዎ በተሳካ ሁኔታ ለአስተዳዳሪው ተልኳል!');
+        return back()->with('success', 'የፈቃድ ጥያቄዎ ለአስተዳዳሪው ተልኳል! ሁኔታውን ከታች መከታተል ይችላሉ።');
     }
 
-    // መውጫ (Logout)
     public function logout()
     {
         session()->forget(['employee_id', 'employee_name']);
