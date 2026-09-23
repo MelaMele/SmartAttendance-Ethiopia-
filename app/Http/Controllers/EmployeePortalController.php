@@ -14,16 +14,16 @@ use Illuminate\Http\Request;
 
 class EmployeePortalController extends Controller
 {
-    // የመግቢያ ገጽ ማሳያ
+    // የመግቢያ ገጽ
     public function showLogin()
     {
-        if (session()->has('employee_id')) {
+        if (session('employee_id')) {
             return redirect()->route('employee.dashboard');
         }
         return view('employee.login');
     }
 
-    // በስልክና በሚስጥር ኮድ ማረጋገጫ
+    // መግቢያ ማረጋገጫ (Flexible Phone Matching)
     public function login(Request $request)
     {
         $request->validate([
@@ -31,22 +31,33 @@ class EmployeePortalController extends Controller
             'access_code'  => 'required',
         ]);
 
-        $employee = Employee::where('phone_number', $request->phone_number)
-            ->where('access_code', $request->access_code)
+        $rawPhone = trim($request->phone_number);
+        // የስልክ ቁጥሩን የመጨረሻ 9 አሃዞች ብቻ መውሰድ (e.g. 911223344)
+        $cleanPhone = substr(preg_replace('/[^0-9]/', '', $rawPhone), -9);
+
+        $employee = Employee::where(function ($query) use ($cleanPhone) {
+                $query->where('phone_number', 'LIKE', '%' . $cleanPhone)
+                      ->orWhere('phone_number', 'LIKE', '%0' . $cleanPhone);
+            })
+            ->where('access_code', trim($request->access_code))
             ->where('is_active', true)
             ->first();
 
         if (!$employee) {
-            return back()->with('error', 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ኮድ! እባክዎ እንደገና ይሞክሩ።');
+            return back()->with('error', 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ኮድ! እባክዎ እንደገና ይሞክሩ።')->withInput();
         }
 
-        // ሰራተኛውን በ Session ውስጥ ማስቀመጥ
-        session(['employee_id' => $employee->id, 'employee_name' => $employee->full_name]);
+        // Session ማስቀመጥ
+        session([
+            'employee_id'   => $employee->id,
+            'employee_name' => $employee->full_name
+        ]);
+        session()->save();
 
-        return redirect()->route('employee.dashboard')->with('success', "እንኳን ደህና መጡ፣ {$employee->full_name}!");
+        return redirect()->route('employee.dashboard');
     }
 
-    // የሰራተኛው ዋና ዳሽቦርድ
+    // ዋና ዳሽቦርድ
     public function dashboard()
     {
         $employeeId = session('employee_id');
@@ -54,37 +65,34 @@ class EmployeePortalController extends Controller
             return redirect()->route('employee.login');
         }
 
-        $employee = Employee::findOrFail($employeeId);
+        $employee = Employee::find($employeeId);
+        if (!$employee) {
+            session()->forget('employee_id');
+            return redirect()->route('employee.login');
+        }
+
         $setting = CompanySetting::first() ?? new CompanySetting();
         $todayGc = Carbon::today('Africa/Addis_Ababa')->toDateString();
         $todayEc = EthiopianCalendarService::todayText();
 
-        // የዛሬው አቴንዳንስ ካለ ማምጣት
         $todayAttendance = Attendance::where('employee_id', $employee->id)
             ->where('date_gc', $todayGc)
             ->first();
 
-        // የቅርብ ጊዜ ማስታወቂያዎች
         $announcements = Announcement::latest()->take(3)->get();
 
-        // የሰራተኛው ያለፉት 5 አቴንዳንሶች
         $recentAttendances = Attendance::where('employee_id', $employee->id)
             ->latest('date_gc')
             ->take(5)
             ->get();
 
         return view('employee.dashboard', compact(
-            'employee',
-            'setting',
-            'todayGc',
-            'todayEc',
-            'todayAttendance',
-            'announcements',
-            'recentAttendances'
+            'employee', 'setting', 'todayGc', 'todayEc',
+            'todayAttendance', 'announcements', 'recentAttendances'
         ));
     }
 
-    // Check-in (100 ሜትር ውስጥ መሆናቸውን አረጋግጦ መመዝገብ)
+    // Check-in (100m GPS)
     public function checkIn(Request $request)
     {
         $request->validate([
@@ -93,6 +101,10 @@ class EmployeePortalController extends Controller
         ]);
 
         $employeeId = session('employee_id');
+        if (!$employeeId) {
+            return response()->json(['success' => false, 'message' => 'እባክዎ መጀመሪያ ይግቡ (Session Expired)!'], 401);
+        }
+
         $setting = CompanySetting::first() ?? CompanySetting::create([
             'company_name' => 'Mela Solution',
             'latitude' => 9.030000,
@@ -100,7 +112,6 @@ class EmployeePortalController extends Controller
             'allowed_radius_meters' => 100,
         ]);
 
-        // የርቀት ስሌት በሜትር
         $distance = GeoService::calculateDistanceInMeters(
             $request->latitude,
             $request->longitude,
@@ -119,11 +130,10 @@ class EmployeePortalController extends Controller
         $todayGc = $now->toDateString();
         $todayEc = EthiopianCalendarService::todayFormatted();
 
-        // አርፍዷል ወይስ በሰዓቱ ነው?
         $workStartTime = Carbon::parse($setting->work_start_time ?? '08:30:00');
         $status = $now->format('H:i:s') > $workStartTime->format('H:i:s') ? 'late' : 'present';
 
-        $attendance = Attendance::firstOrCreate(
+        Attendance::firstOrCreate(
             ['employee_id' => $employeeId, 'date_gc' => $todayGc],
             [
                 'date_ec' => $todayEc,
@@ -137,12 +147,12 @@ class EmployeePortalController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Check-in በተሳካ ሁኔታ ተመዝግቧል! (ከቢሮው በ {$distance} ሜትር ርቀት ላይ ነዎት)",
+            'message' => "Check-in በተሳካ ሁኔታ ተመዝግቧል! (ከቢሮ በ {$distance} ሜትር ርቀት ላይ ነዎት)",
             'time' => $now->format('h:i A')
         ]);
     }
 
-    // Check-out (የስራ መውጫ ሰዓት መመዝገብ)
+    // Check-out
     public function checkOut(Request $request)
     {
         $request->validate([
@@ -190,26 +200,20 @@ class EmployeePortalController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Check-out በተሳካ ሁኔታ ተከናውኗል! ደህና ይደሩ።",
+            'message' => "Check-out በተሳካ ሁኔታ ተመዝግቧል! ደህና ይደሩ።",
             'time' => $now->format('h:i A')
         ]);
     }
 
-    // ከቤት ሆነው ፈቃድ የመጠየቂያ ፎርም መቀበያ (No GPS restriction)
+    // የፈቃድ ጥያቄ ማስገቢያ
     public function submitLeave(Request $request)
     {
         $request->validate([
             'leave_type'    => 'required|string',
             'start_date_gc' => 'required|date',
-            'end_date_gc'   => 'required|date|after_or_equal:start_date_gc',
+            'end_date_gc'   => 'required|date',
             'reason'        => 'required|string',
-            'attachment'    => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096'
         ]);
-
-        $filePath = null;
-        if ($request->hasFile('attachment')) {
-            $filePath = $request->file('attachment')->store('leave_attachments', 'public');
-        }
 
         LeaveRequest::create([
             'employee_id'   => session('employee_id'),
@@ -219,17 +223,17 @@ class EmployeePortalController extends Controller
             'end_date_gc'   => $request->end_date_gc,
             'end_date_ec'   => EthiopianCalendarService::fromGregorian($request->end_date_gc)['formatted_text'],
             'reason'        => $request->reason,
-            'attachment'    => $filePath,
             'status'        => 'pending'
         ]);
 
-        return back()->with('success', 'የፈቃድ ጥያቄዎ ለአስተዳዳሪው ተልኳል! ውሳኔውን እዚህ ገጽ ላይ መከታተል ይችላሉ።');
+        return back()->with('success', 'የፈቃድ ጥያቄዎ በተሳካ ሁኔታ ለአስተዳዳሪው ተልኳል!');
     }
 
     // መውጫ (Logout)
     public function logout()
     {
         session()->forget(['employee_id', 'employee_name']);
+        session()->flush();
         return redirect()->route('employee.login');
     }
 }
