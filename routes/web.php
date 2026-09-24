@@ -1,36 +1,60 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
 use App\Http\Controllers\EmployeePortalController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\SuperAdminController;
 use App\Models\Ad;
+use App\Models\Company;
 
+// መነሻ ገጽ - ወደ ሰራተኛ መግቢያ ይወስዳል
 Route::get('/', function () {
     return redirect()->route('employee.login');
 });
 
-// የማስታወቂያ ክሊክ መቁጠሪያ (Ad Click Tracker)
+// ==========================================
+// 1. ለተመዘገቡ ድርጅቶች የተፈጠረ ልዩ ሊንክ (/c/{slug})
+// ==========================================
+Route::get('/c/{slug}', function ($slug) {
+    $company = Company::where('slug', $slug)->first();
+
+    if (!$company) {
+        return response("<h1>404 | ድርጅቱ በሲስተሙ ውስጥ አልተገኘም!</h1>", 404);
+    }
+
+    if ($company->status === 'suspended') {
+        return response("
+            <div style='font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#fff; min-height:100vh;'>
+                <h1 style='color:#f43f5e;'>⛔ ይህ ድርጅት በጊዜያዊነት ታግዷል (Suspended)</h1>
+                <p>እባክዎ ከአስተዳዳሪው ጋር ይገናኙ።</p>
+                <p>Powered by Mela Solution | 0913064239 / 0703064239</p>
+            </div>
+        ", 403);
+    }
+
+    // ድርጅቱ ክፍት ከሆነ በቀጥታ ወደ ሰራተኞች መግቢያ ይወስደዋል
+    return redirect()->route('employee.login');
+});
+
+// የማስታወቂያ ክሊክ መቁጠሪያ
 Route::get('/ad-click/{id}', function ($id) {
     $ad = Ad::findOrFail($id);
     $ad->increment('clicks_count');
     return redirect()->away($ad->target_url);
 })->name('ad.click');
 
-// የዳታቤዝ ማሻሻያ ማስነሻ
+// የዳታቤዝ ማይግሬሽን ማነሳሻ
 Route::get('/setup-db', function () {
     try {
         \Illuminate\Support\Facades\Artisan::call('migrate --force');
-        return "✅ የ SmartStaff ዳታቤዝ ማይግሬሽን፣ ሱፐር አድሚን እና የማስታወቂያ ሰሌዳ በተሳካ ሁኔታ ተፈጥረዋል!";
+        return "✅ የ SmartStaff ዳታቤዝ ማይግሬሽን እና ሴቲንግ በተሳካ ሁኔታ ተፈጥሯል!";
     } catch (\Exception $e) {
         return "❌ ስህተት፡ " . $e->getMessage();
     }
 });
 
 // ==========================================
-// 1. የሱፐር አድሚን ፖርታል (Super Admin SaaS)
+// 2. የሱፐር አድሚን ፖርታል (Super Admin SaaS)
 // ==========================================
 Route::prefix('superadmin')->name('superadmin.')->group(function () {
     Route::get('/', [SuperAdminController::class, 'dashboard'])->name('dashboard');
@@ -42,7 +66,7 @@ Route::prefix('superadmin')->name('superadmin.')->group(function () {
 });
 
 // ==========================================
-// 2. የሰራተኞች ፖርታል (Employee Portal)
+// 3. የሰራተኞች ፖርታል (Employee Portal)
 // ==========================================
 Route::prefix('portal')->name('employee.')->group(function () {
     Route::get('/login', [EmployeePortalController::class, 'showLogin'])->name('login');
@@ -56,7 +80,7 @@ Route::prefix('portal')->name('employee.')->group(function () {
 });
 
 // ==========================================
-// 3. የአድሚን መቆጣጠሪያ (Admin Portal)
+// 4. የአድሚን መቆጣጠሪያ (Admin Portal)
 // ==========================================
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
