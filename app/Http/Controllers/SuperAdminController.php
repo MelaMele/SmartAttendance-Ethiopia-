@@ -5,13 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Company;
 use App\Models\Ad;
 use App\Models\Employee;
-use App\Models\Attendance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class SuperAdminController extends Controller
 {
-    // የሱፐር አድሚን ዋና ዳሽቦርድ
     public function dashboard()
     {
         $companies = Company::withCount('employees')->latest()->get();
@@ -23,13 +21,15 @@ class SuperAdminController extends Controller
         $totalAdViews = $ads->sum('views_count');
         $totalAdClicks = $ads->sum('clicks_count');
 
+        // ለቀጥታ ተንቀሳቃሽ ሰሌዳ (Live Carousel)
+        $activeAds = Ad::where('is_active', true)->latest()->get();
+
         return view('superadmin.dashboard', compact(
-            'companies', 'ads', 'totalCompanies',
+            'companies', 'ads', 'activeAds', 'totalCompanies',
             'activeCompanies', 'totalEmployees', 'totalAdViews', 'totalAdClicks'
         ));
     }
 
-    // አዲስ ድርጅት መመዝገብና ልዩ ሊንክ ማመንጨት
     public function storeCompany(Request $request)
     {
         $request->validate([
@@ -39,7 +39,6 @@ class SuperAdminController extends Controller
         ]);
 
         $slug = Str::slug($request->company_name);
-        // ስሙ ከተደጋገመ ልዩ ቁጥር ማከል
         if (Company::where('slug', $slug)->exists()) {
             $slug = $slug . '-' . rand(100, 999);
         }
@@ -58,7 +57,6 @@ class SuperAdminController extends Controller
         return back()->with('success', "ድርጅቱ ተመዝግቧል! የተፈጠረለት ሊንክ፡ " . url("/c/{$company->slug}"));
     }
 
-    // በአንድ ክሊክ ድርጅትን ማገድ ወይም መክፈት (1-Click Suspend / Activate)
     public function toggleCompanyStatus($id)
     {
         $company = Company::findOrFail($id);
@@ -69,28 +67,43 @@ class SuperAdminController extends Controller
         return back()->with('success', $msg);
     }
 
-    // አዲስ ማስታወቂያ መጫን (Ad Network Creator)
+    // አዲስ ፖስተር ከስልክ/ኮምፒውተር Upload ማድረጊያ
     public function storeAd(Request $request)
     {
         $request->validate([
             'title'        => 'required|string|max:255',
-            'banner_image' => 'required|url', // የምስል ሊንክ
-            'target_url'   => 'required|url',  // ተጠቃሚው ጠቅ ሲያደርግ የሚሄድበት
+            'target_url'   => 'required|url',
             'placement'    => 'required|in:employee_dashboard,admin_dashboard,all',
+            'expiry_date'  => 'nullable|date',
+            'ad_file'      => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:3072', // እስከ 3MB
+            'banner_image' => 'nullable|url',
         ]);
+
+        $imageUrl = $request->banner_image;
+
+        // ፋይል ከስልክ/ፒሲ ከተጫነ ወደ Base64 ይቀየራል (በ Vercel ላይ ዘላቂ ሆኖ እንዲቆይ)
+        if ($request->hasFile('ad_file')) {
+            $file = $request->file('ad_file');
+            $imageContent = file_get_contents($file->getRealPath());
+            $mimeType = $file->getMimeType();
+            $imageUrl = 'data:' . $mimeType . ';base64,' . base64_encode($imageContent);
+        }
+
+        if (!$imageUrl) {
+            return back()->with('error', 'እባክዎ የማስታወቂያ ፎቶ ይምረጡ ወይም የምስል ሊንክ ያስገቡ!');
+        }
 
         Ad::create([
             'title'        => $request->title,
-            'banner_image' => $request->banner_image,
+            'banner_image' => $imageUrl,
             'target_url'   => $request->target_url,
             'placement'    => $request->placement,
             'is_active'    => true,
         ]);
 
-        return back()->with('success', 'አዲስ ማስታወቂያ በተሳካ ሁኔታ ተለጥፏል!');
+        return back()->with('success', 'አዲስ ፖስተር በተሳካ ሁኔታ ተጭኗል!');
     }
 
-    // ማስታወቂያ ማጥፋት ወይም ማቆም
     public function toggleAdStatus($id)
     {
         $ad = Ad::findOrFail($id);
