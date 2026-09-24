@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 
 class SuperAdminController extends Controller
 {
+    // ዋና የሱፐር አድሚን ዳሽቦርድ
     public function dashboard()
     {
         $companies = Company::withCount('employees')->latest()->get();
@@ -21,7 +22,7 @@ class SuperAdminController extends Controller
         $totalAdViews = $ads->sum('views_count');
         $totalAdClicks = $ads->sum('clicks_count');
 
-        // ለቀጥታ ተንቀሳቃሽ ሰሌዳ (Live Carousel)
+        // ለቀጥታ ተንቀሳቃሽ ሰሌዳ (Live 4.5s Carousel)
         $activeAds = Ad::where('is_active', true)->latest()->get();
 
         return view('superadmin.dashboard', compact(
@@ -30,6 +31,7 @@ class SuperAdminController extends Controller
         ));
     }
 
+    // አዲስ ድርጅት መመዝገብ
     public function storeCompany(Request $request)
     {
         $request->validate([
@@ -57,6 +59,7 @@ class SuperAdminController extends Controller
         return back()->with('success', "ድርጅቱ ተመዝግቧል! የተፈጠረለት ሊንክ፡ " . url("/c/{$company->slug}"));
     }
 
+    // በ 1-Click ድርጅትን ማገድ ወይም መክፈት
     public function toggleCompanyStatus($id)
     {
         $company = Company::findOrFail($id);
@@ -67,43 +70,48 @@ class SuperAdminController extends Controller
         return back()->with('success', $msg);
     }
 
-    // አዲስ ፖስተር ከስልክ/ኮምፒውተር Upload ማድረጊያ
+    // አዲስ ፖስተር መጫኛ (ከነ ፎቶ መጨመሪያ/Compressor ሎጂክ ጋር)
     public function storeAd(Request $request)
     {
         $request->validate([
             'title'        => 'required|string|max:255',
-            'target_url'   => 'required|url',
+            'target_url'   => 'nullable|string',
+            'phone_number' => 'nullable|string',
             'placement'    => 'required|in:employee_dashboard,admin_dashboard,all',
-            'expiry_date'  => 'nullable|date',
-            'ad_file'      => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:3072', // እስከ 3MB
+            'ad_file'      => 'nullable|image|max:8192', // እስከ 8MB መቀበል ይችላል፤ ራሱ ያሳንሰዋል
             'banner_image' => 'nullable|url',
         ]);
 
         $imageUrl = $request->banner_image;
 
-        // ፋይል ከስልክ/ፒሲ ከተጫነ ወደ Base64 ይቀየራል (በ Vercel ላይ ዘላቂ ሆኖ እንዲቆይ)
+        // ፎቶ ከተሰጠ በ PHP GD አማካኝነት መጠኑን አሳንሶ (Compress) ማስቀመጥ
         if ($request->hasFile('ad_file')) {
             $file = $request->file('ad_file');
-            $imageContent = file_get_contents($file->getRealPath());
-            $mimeType = $file->getMimeType();
-            $imageUrl = 'data:' . $mimeType . ';base64,' . base64_encode($imageContent);
+            $imageUrl = $this->compressAndConvertToBase64($file);
         }
 
         if (!$imageUrl) {
-            return back()->with('error', 'እባክዎ የማስታወቂያ ፎቶ ይምረጡ ወይም የምስል ሊንክ ያስገቡ!');
+            return back()->with('error', 'እባክዎ የማስታወቂያ ፎቶ ይምረጡ!');
+        }
+
+        // ስልክ ቁጥር ከተሞላ ቀጥታ መደወያ (tel:...) ማድረግ
+        $targetAction = $request->target_url;
+        if ($request->filled('phone_number')) {
+            $targetAction = 'tel:' . preg_replace('/[^0-9+]/', '', $request->phone_number);
         }
 
         Ad::create([
             'title'        => $request->title,
             'banner_image' => $imageUrl,
-            'target_url'   => $request->target_url,
+            'target_url'   => $targetAction ?? '#',
             'placement'    => $request->placement,
             'is_active'    => true,
         ]);
 
-        return back()->with('success', 'አዲስ ፖስተር በተሳካ ሁኔታ ተጭኗል!');
+        return back()->with('success', 'አዲስ ፖስተር (Compress ተደርጎ መጠኑ በከፍተኛ ሁኔታ ቀንሶ) ተጭኗል!');
     }
 
+    // ማስታወቂያ ማቆም ወይም ማሳየት
     public function toggleAdStatus($id)
     {
         $ad = Ad::findOrFail($id);
@@ -111,10 +119,73 @@ class SuperAdminController extends Controller
         return back()->with('success', 'የማስታወቂያው ሁኔታ ተቀይሯል!');
     }
 
+    // ማስታወቂያ ማጥፋት
     public function deleteAd($id)
     {
         $ad = Ad::findOrFail($id);
         $ad->delete();
         return back()->with('success', 'ማስታወቂያው ተሰርዟል!');
+    }
+
+    /**
+     * ፎቶውን አሳንሶ (Resize & Compress) ወደ ዝቅተኛ Base64 መቀየሪያ ፈንክሽን
+     */
+    private function compressAndConvertToBase64($file)
+    {
+        $filePath = $file->getRealPath();
+        $mime = $file->getMimeType();
+
+        // የምስል ምንጭ መፍጠር
+        switch ($mime) {
+            case 'image/jpeg':
+            case 'image/jpg':
+                $image = @imagecreatefromjpeg($filePath);
+                break;
+            case 'image/png':
+                $image = @imagecreatefrompng($filePath);
+                break;
+            case 'image/webp':
+                $image = @imagecreatefromwebp($filePath);
+                break;
+            default:
+                // GD የማይደግፈው ከሆነ በቀጥታ ማስቀመጥ
+                return 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($filePath));
+        }
+
+        if (!$image) {
+            return 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($filePath));
+        }
+
+        // 1. መጠኑን (Dimension) ወደ ከፍተኛው 700px ማስተካከል
+        $origWidth = imagesx($image);
+        $origHeight = imagesy($image);
+        $maxWidth = 700;
+
+        if ($origWidth > $maxWidth) {
+            $newWidth = $maxWidth;
+            $newHeight = (int) ($origHeight * ($maxWidth / $origWidth));
+        } else {
+            $newWidth = $origWidth;
+            $newHeight = $origHeight;
+        }
+
+        $resizedImage = imagecreatetruecolor($newWidth, $newHeight);
+
+        // ለ PNG የነበረውን Transparency መጠበቅ
+        imagealphablending($resizedImage, false);
+        imagesavealpha($resizedImage, true);
+
+        imagecopyresampled($resizedImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
+
+        // 2. በጥራት 65% ወደ JPEG ማሳነስ (ፋይሉን እጅግ በጣም ያቀለዋል)
+        ob_start();
+        imagejpeg($resizedImage, null, 65);
+        $compressedData = ob_get_clean();
+
+        // ሚሞሪውን ማጽዳት
+        imagedestroy($image);
+        imagedestroy($resizedImage);
+
+        return 'data:image/jpeg;base64,' . base64_encode($compressedData);
     }
 }
