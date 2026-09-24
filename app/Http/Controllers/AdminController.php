@@ -7,6 +7,7 @@ use App\Models\CompanySetting;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\Announcement;
+use App\Models\Ad;
 use App\Services\EthiopianCalendarService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -16,7 +17,9 @@ class AdminController extends Controller
     public function dashboard(Request $request)
     {
         $todayGc = Carbon::today('Africa/Addis_Ababa')->toDateString();
-        $todayEc = EthiopianCalendarService::todayText();
+        $todayEcData = EthiopianCalendarService::fromGregorian($todayGc);
+        $todayEc = $todayEcData['formatted_text'];
+        $currentEthMonth = $todayEcData['month'];
 
         $setting = CompanySetting::first() ?? CompanySetting::create([
             'company_name' => 'Mela Solution',
@@ -30,7 +33,7 @@ class AdminController extends Controller
         $employees = Employee::where('is_active', true)->get();
         $totalEmployees = $employees->count();
 
-        // ዛሬ በጸደቀ ፈቃድ ላይ ያሉ ሰራተኞች
+        // ዛሬ በፈቃድ ላይ ያሉ
         $onLeaveToday = LeaveRequest::with('employee')
             ->where('status', 'approved')
             ->where('start_date_gc', '<=', $todayGc)
@@ -51,12 +54,24 @@ class AdminController extends Controller
             ->latest()
             ->get();
 
-        $announcements = Announcement::with('employee')->latest()->take(6)->get();
+        // የተመረጠው የኢትዮጵያ ወር (ፎልደር ማህደር) - በነባሪ የአሁኑ ወር
+        $selectedMonth = $request->get('month', $currentEthMonth);
+        $monthAnnouncements = Announcement::where('eth_month', $selectedMonth)->latest()->get();
+
+        // ማስታወቂያ ለአድሚን
+        $adminAd = Ad::where('is_active', true)
+            ->whereIn('placement', ['admin_dashboard', 'all'])
+            ->inRandomOrder()
+            ->first();
+        if ($adminAd) {
+            $adminAd->increment('views_count');
+        }
 
         return view('admin.dashboard', compact(
             'todayGc', 'todayEc', 'setting', 'employees', 'totalEmployees',
             'presentCount', 'lateCount', 'onLeaveCount', 'absentCount',
-            'todayAttendances', 'onLeaveToday', 'pendingLeaves', 'announcements'
+            'todayAttendances', 'onLeaveToday', 'pendingLeaves',
+            'monthAnnouncements', 'selectedMonth', 'adminAd'
         ));
     }
 
@@ -89,6 +104,44 @@ class AdminController extends Controller
         return back()->with('success', "ሰራተኛው ተመዝግቧል! የመግቢያ ኮድ፡ {$accessCode}");
     }
 
+    // ሰራተኛ ማስተካከል (Edit Employee)
+    public function updateEmployee(Request $request, $id)
+    {
+        $employee = Employee::findOrFail($id);
+        $request->validate([
+            'full_name'    => 'required|string|max:255',
+            'phone_number' => 'required|unique:employees,phone_number,' . $employee->id,
+            'department'   => 'nullable|string',
+            'position'     => 'nullable|string',
+            'access_code'  => 'required|string',
+        ]);
+
+        $employee->update($request->all());
+        return back()->with('success', 'የሰራተኛው መረጃ በተሳካ ሁኔታ ተስተካክሏል!');
+    }
+
+    // ሰራተኛ ሲለቅ ማጥፋት (Delete Employee)
+    public function deleteEmployee($id)
+    {
+        $employee = Employee::findOrFail($id);
+        $employee->delete();
+        return back()->with('success', 'ሰራተኛው ከሲስተሙ ተሰርዟል!');
+    }
+
+    // ፈጣን የሁኔታ መቀየሪያ (Quick Status Update: Present, Late, Absent, Permission)
+    public function quickStatusUpdate(Request $request, $id)
+    {
+        $request->validate([
+            'status' => 'required|in:present,late,absent,on_leave'
+        ]);
+
+        $attendance = Attendance::findOrFail($id);
+        $attendance->update(['status' => $request->status]);
+
+        return back()->with('success', 'የሰራተኛው ሁኔታ ተቀይሯል!');
+    }
+
+    // የ 100m ጂፒኤስ ማስተካከያ
     public function updateGeofence(Request $request)
     {
         $request->validate([
@@ -120,10 +173,9 @@ class AdminController extends Controller
             'admin_remark' => $request->admin_remark,
         ]);
 
-        return back()->with('success', "የፈቃድ ጥያቄው ውሳኔ ተመዝግቧል!");
+        return back()->with('success', 'የፈቃድ ጥያቄው ውሳኔ ተመዝግቧል!');
     }
 
-    // ቀድሞ የመውጣት ምክንያት ማጽደቅ
     public function approveEarlyLeave($id)
     {
         $attendance = Attendance::findOrFail($id);
@@ -131,35 +183,42 @@ class AdminController extends Controller
         return back()->with('success', 'ቀድሞ የመውጣት ጥያቄው ጸድቋል!');
     }
 
-    // ማስታወቂያ ወይም ለእያንዳንዱ ሰራተኛ ለብቻው መልእክት መላኪያ
+    // መልእክት መላክ (ከወር ቁጥር ጋር ወደ ማህደር ማስገባት)
     public function postAnnouncement(Request $request)
     {
         $request->validate([
             'title'       => 'required|string|max:255',
             'message'     => 'required|string',
-            'employee_id' => 'nullable', // ባዶ ከሆነ ለሁሉም፣ ቁጥር ከሆነ ለተመረጠው
+            'employee_id' => 'nullable',
             'priority'    => 'required|in:normal,urgent,info'
         ]);
 
         $today = Carbon::today('Africa/Addis_Ababa');
+        $ethData = EthiopianCalendarService::fromGregorian($today);
 
         Announcement::create([
             'title'       => $request->title,
             'message'     => $request->message,
             'priority'    => $request->priority,
             'employee_id' => $request->employee_id === 'all' ? null : $request->employee_id,
+            'eth_month'   => $ethData['month'], // ከመስከረም - ጳጉሜን
+            'eth_year'    => $ethData['year'],
             'date_gc'     => $today->toDateString(),
-            'date_ec'     => EthiopianCalendarService::todayFormatted()
+            'date_ec'     => $ethData['formatted_text']
         ]);
 
-        $target = $request->employee_id === 'all' || empty($request->employee_id) ? "ለሁሉም ሰራተኞች" : "ለተመረጠው ሰራተኛ";
-        return back()->with('success', "መልእክቱ {$target} በተሳካ ሁኔታ ተላልፏል!");
+        return back()->with('success', 'መልእክቱ ተላልፏል፤ ወደ ወርሃዊ ማህደርም ገብቷል!');
     }
 
-    public function exportAttendanceCsv()
+    // የወርሃዊ ማጠቃለያ ሪፖርት (Payroll Monthly Summary Export)
+    public function exportMonthlySummaryCsv(Request $request)
     {
-        $fileName = 'attendance_report_' . date('Y-m-d') . '.csv';
-        $attendances = Attendance::with('employee')->latest()->get();
+        $ethData = EthiopianCalendarService::fromGregorian();
+        $month = $request->get('month', $ethData['month']);
+        $year = $ethData['year'];
+
+        $fileName = "Monthly_Attendance_Summary_Month_{$month}_{$year}.csv";
+        $employees = Employee::where('is_active', true)->get();
 
         $headers = [
             "Content-type"        => "text/csv; charset=UTF-8",
@@ -169,23 +228,33 @@ class AdminController extends Controller
             "Expires"             => "0"
         ];
 
-        $columns = ['የሰራተኛ ስም', 'ስልክ ቁጥር', 'ቀን (ዓ.ም)', 'የመግቢያ ሰዓት', 'ርቀት (ሜ)', 'የመውጫ ሰዓት', 'ቀድሞ የወጣበት ምክንያት', 'ሁኔታ'];
+        // ንጹህ የወር ማጠቃለያ አምዶች
+        $columns = ['የሰራተኛ ሙሉ ስም', 'ስልክ ቁጥር', 'ክፍል / መደብ', 'የተገኙበት ቀን ብዛት (Present)', 'ያረፈዱበት ቀን ብዛት (Late)', 'በፈቃድ የቆዩበት ቀን (Permission)', 'የቀሩበት ቀን ብዛት (Absent)'];
 
-        $callback = function() use($attendances, $columns) {
+        $callback = function() use($employees, $month, $year, $columns) {
             $file = fopen('php://output', 'w');
-            fputs($file, "\xEF\xBB\xBF");
+            fputs($file, "\xEF\xBB\xBF"); // UTF-8 BOM ለግዕዝ ፊደላት
             fputcsv($file, $columns);
 
-            foreach ($attendances as $row) {
+            foreach ($employees as $emp) {
+                // በወሩ ውስጥ የነበሩ አቴንዳንሶች
+                $attendances = Attendance::where('employee_id', $emp->id)
+                    ->where('eth_month', $month)
+                    ->get();
+
+                $presentDays = $attendances->where('status', 'present')->count();
+                $lateDays = $attendances->where('status', 'late')->count();
+                $permissionDays = $attendances->where('status', 'on_leave')->count();
+                $absentDays = $attendances->where('status', 'absent')->count();
+
                 fputcsv($file, [
-                    $row->employee->full_name ?? '',
-                    $row->employee->phone_number ?? '',
-                    $row->date_ec,
-                    $row->check_in_at ? $row->check_in_at->format('h:i A') : '-',
-                    $row->check_in_distance_meters ?? '-',
-                    $row->check_out_at ? $row->check_out_at->format('h:i A') : '-',
-                    $row->early_leave_reason ?? '-',
-                    $row->status,
+                    $emp->full_name,
+                    $emp->phone_number,
+                    ($emp->department ?? '-') . ' / ' . ($emp->position ?? '-'),
+                    $presentDays,
+                    $lateDays,
+                    $permissionDays,
+                    $absentDays,
                 ]);
             }
             fclose($file);
