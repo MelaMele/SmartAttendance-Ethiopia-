@@ -19,7 +19,10 @@ Route::get('/c/{slug}', function ($slug) {
     $company = Company::where('slug', $slug)->first();
 
     if (!$company) {
-        return response("<h1>404 | ድርጅቱ በሲስተሙ ውስጥ አልተገኘም!</h1>", 404);
+        return response("<div style='font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#fff; min-height:100vh;'>
+            <h1 style='color:#f43f5e;'>404 | ድርጅቱ በሲስተሙ ውስጥ አልተገኘም!</h1>
+            <p>የተሳሳተ ሊንክ ተጠቅመዋል ወይም ድርጅቱ አልተመዘገበም።</p>
+        </div>", 404);
     }
 
     if ($company->status === 'suspended') {
@@ -27,16 +30,17 @@ Route::get('/c/{slug}', function ($slug) {
             <div style='font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#fff; min-height:100vh;'>
                 <h1 style='color:#f43f5e;'>⛔ ይህ ድርጅት በጊዜያዊነት ታግዷል (Suspended)</h1>
                 <p>እባክዎ ከአስተዳዳሪው ጋር ይገናኙ።</p>
-                <p>Powered by Mela Solution | 0913064239 / 0703064239</p>
+                <p style='color:#94a3b8; margin-top:20px;'>Powered by Mela Solution | 0913064239 / 0703064239</p>
             </div>
         ", 403);
     }
 
-    // ድርጅቱ ክፍት ከሆነ በቀጥታ ወደ ሰራተኞች መግቢያ ይወስደዋል
+    // ድርጅቱ ንቁ ከሆነ የኩባንያውን ID በ Session ይዞ ወደ ሰራተኞች መግቢያ ይወስዳል
+    session(['current_company_id' => $company->id, 'current_company_slug' => $company->slug]);
     return redirect()->route('employee.login');
 });
 
-// የማስታወቂያ ክሊክ መቁጠሪያ
+// የማስታወቂያ ክሊክ መቁጠሪያ (Click Tracker)
 Route::get('/ad-click/{id}', function ($id) {
     $ad = Ad::findOrFail($id);
     $ad->increment('clicks_count');
@@ -60,7 +64,10 @@ Route::prefix('superadmin')->name('superadmin.')->group(function () {
     Route::get('/', [SuperAdminController::class, 'dashboard'])->name('dashboard');
     Route::post('/companies', [SuperAdminController::class, 'storeCompany'])->name('company.store');
     Route::post('/companies/{id}/toggle', [SuperAdminController::class, 'toggleCompanyStatus'])->name('company.toggle');
+    
+    // የማስታወቂያ ማስተዳደሪያ (CRUD & Toggle)
     Route::post('/ads', [SuperAdminController::class, 'storeAd'])->name('ad.store');
+    Route::post('/ads/{id}/update', [SuperAdminController::class, 'updateAd'])->name('ad.update');
     Route::post('/ads/{id}/toggle', [SuperAdminController::class, 'toggleAdStatus'])->name('ad.toggle');
     Route::post('/ads/{id}/delete', [SuperAdminController::class, 'deleteAd'])->name('ad.delete');
 });
