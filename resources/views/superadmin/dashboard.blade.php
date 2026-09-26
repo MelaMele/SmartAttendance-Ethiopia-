@@ -7,9 +7,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Noto Sans Ethiopic', sans-serif; }</style>
+    <style>
+        body { font-family: 'Noto Sans Ethiopic', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between"
+      x-data="{ editModalOpen: false, editAd: { id: null, title: '', target_url: '', placement: 'all' } }">
 
     <div>
         <!-- Top Navigation -->
@@ -62,7 +66,7 @@
             </div>
 
             <!-- ============================================================== -->
-            <!-- 1. የድርጅቶች አስተዳደር እና መመዝገቢያ (COMPANIES MANAGEMENT & REGISTRATION) -->
+            <!-- 1. የድርጅቶች አስተዳደር እና መመዝገቢያ (COMPANIES MANAGEMENT) -->
             <!-- ============================================================== -->
             <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
                 <div class="flex flex-wrap justify-between items-center gap-2">
@@ -74,7 +78,7 @@
                     </div>
                 </div>
 
-                <!-- NEW COMPANY REGISTRATION FORM (መመዝገቢያ ፎርም) -->
+                <!-- NEW COMPANY REGISTRATION FORM -->
                 <div class="bg-slate-800/50 border border-slate-700/70 p-5 rounded-2xl">
                     <h4 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3">➕ አዲስ ድርጅት መመዝገቢያ (Generate Company Link)</h4>
                     
@@ -180,26 +184,26 @@
 
                 <!-- Carousel Display Window -->
                 <div class="relative w-full h-48 md:h-64 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                    <template x-if="ads.length > 0">
+                    <template x-if="ads && ads.length > 0">
                         <div class="w-full h-full relative group">
-                            <img :src="ads[currentIndex].banner_image" 
+                            <img :src="ads[currentIndex]?.banner_image" 
                                  class="w-full h-full object-cover transition-opacity duration-700 ease-in-out">
                             
                             <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent flex flex-col justify-end p-5">
                                 <span class="px-2 py-0.5 bg-amber-500 text-slate-950 text-[10px] font-black rounded w-fit mb-1">ስፖንሰር</span>
-                                <h4 class="text-base font-bold text-white" x-text="ads[currentIndex].title"></h4>
-                                <p class="text-xs text-blue-400 font-mono mt-0.5" x-text="ads[currentIndex].target_url"></p>
+                                <h4 class="text-base font-bold text-white" x-text="ads[currentIndex]?.title"></h4>
+                                <p class="text-xs text-blue-400 font-mono mt-0.5" x-text="ads[currentIndex]?.target_url"></p>
                             </div>
                         </div>
                     </template>
 
-                    <template x-if="ads.length === 0">
+                    <template x-if="!ads || ads.length === 0">
                         <div class="text-center p-6 text-slate-500">
                             <p class="text-sm">ምንም ንቁ ማስታወቂያ የለም። ከስር አዲስ ፖስተር ይጫኑ!</p>
                         </div>
                     </template>
 
-                    <div class="absolute bottom-3 right-4 flex gap-1.5" x-show="ads.length > 1">
+                    <div class="absolute bottom-3 right-4 flex gap-1.5" x-show="ads && ads.length > 1">
                         <template x-for="(item, index) in ads" :key="index">
                             <button @click="setIndex(index)" 
                                     :class="index === currentIndex ? 'bg-amber-400 w-5' : 'bg-slate-600 w-2'" 
@@ -210,7 +214,7 @@
             </div>
 
             <!-- ============================================================== -->
-            <!-- 3. የማስታወቂያዎች አስተዳደር (AD CAMPAIGNS - UPLOAD & MANAGE) -->
+            <!-- 3. የማስታወቂያዎች አስተዳደር (AD CAMPAIGNS - UPLOAD, EDIT & MANAGE) -->
             <!-- ============================================================== -->
             <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
                 <div class="flex flex-wrap justify-between items-center gap-2">
@@ -218,7 +222,7 @@
                         <h3 class="text-base font-bold text-white flex items-center gap-2">
                             📢 የማስታወቂያዎች አስተዳደር (Ad Campaigns)
                         </h3>
-                        <p class="text-xs text-slate-400">ማስታወቂያዎችን በቀጥታ ከስልክዎ ወይም ከኮምፒውተርዎ Upload ያድርጉ</p>
+                        <p class="text-xs text-slate-400">ማስታወቂያዎችን ይጫኑ፣ ያስተካክሉ (Edit) ወይም በቋሚነት ያጥፉ</p>
                     </div>
                 </div>
 
@@ -241,7 +245,7 @@
                         </div>
 
                         <div>
-                            <label class="block text-slate-300 mb-1 font-semibold">የሚወስደው ሊንክ (Target URL) ወይም ስልክ</label>
+                            <label class="block text-slate-300 mb-1 font-semibold">የሚወስደው ሊንክ ወይም ስልክ ቁጥር</label>
                             <input type="text" name="target_url" placeholder="https://... ወይም 0911223344" required 
                                    class="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono">
                         </div>
@@ -270,7 +274,6 @@
                             <tr>
                                 <th class="p-3">ፖስተር</th>
                                 <th class="p-3">ዒላማ</th>
-                                <th class="p-3">የጊዜ ገደብ</th>
                                 <th class="p-3">እይታ / ክሊክ</th>
                                 <th class="p-3">ሁኔታ</th>
                                 <th class="p-3">እርምጃ</th>
@@ -285,7 +288,7 @@
                                             <div>
                                                 <p class="font-bold text-white text-xs">{{ $ad->title }}</p>
                                                 <a href="{{ $ad->target_url }}" target="_blank" class="text-[10px] text-blue-400 font-mono hover:underline">
-                                                    {{ Str::limit($ad->target_url, 25) }} ↗
+                                                    {{ Str::limit($ad->target_url, 30) }} ↗
                                                 </a>
                                             </div>
                                         </div>
@@ -299,30 +302,36 @@
                                             <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-semibold text-[10px]">ለአድሚኖች</span>
                                         @endif
                                     </td>
-                                    <td class="p-3 text-slate-400 font-mono text-[11px]">
-                                        ያልተገደበ (Unlimited)
-                                    </td>
-                                    <td class="p-3 text-slate-300">
+                                    <td class="p-3 text-slate-300 font-mono">
                                         <span class="font-bold text-amber-400">{{ $ad->views_count }}</span> እይታ / 
                                         <span class="font-bold text-emerald-400">{{ $ad->clicks_count }}</span> ክሊክ
                                     </td>
                                     <td class="p-3">
                                         <span class="px-2.5 py-1 rounded-full text-[10px] font-bold {{ $ad->is_active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400' }}">
-                                            {{ $ad->is_active ? '● በመታየት ላይ' : '○ የቆመ' }}
+                                            {{ $ad->is_active ? '● ንቁ' : '○ የቆመ' }}
                                         </span>
                                     </td>
                                     <td class="p-3">
                                         <div class="flex items-center gap-2">
+                                            <!-- EDIT BUTTON (MODAL TRIGGER) -->
+                                            <button @click="editModalOpen = true; editAd = { id: {{ $ad->id }}, title: '{{ addslashes($ad->title) }}', target_url: '{{ addslashes($ad->target_url) }}', placement: '{{ $ad->placement }}' }"
+                                                    class="px-2.5 py-1 rounded bg-blue-900/40 hover:bg-blue-600 text-blue-300 hover:text-white text-[10px] font-bold transition">
+                                                ✏️ አርትዕ
+                                            </button>
+
+                                            <!-- TOGGLE STATUS BUTTON -->
                                             <form action="{{ route('superadmin.ad.toggle', $ad->id) }}" method="POST">
                                                 @csrf
                                                 <button class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-bold transition">
                                                     {{ $ad->is_active ? 'አቁም' : 'አሳይ' }}
                                                 </button>
                                             </form>
-                                            <form action="{{ route('superadmin.ad.delete', $ad->id) }}" method="POST" onsubmit="return confirm('ይህ ማስታወቂያ ይሰረዝ?')">
+
+                                            <!-- DELETE BUTTON -->
+                                            <form action="{{ route('superadmin.ad.delete', $ad->id) }}" method="POST" onsubmit="return confirm('ይህ ማስታወቂያ በቋሚነት ይሰረዝ?')">
                                                 @csrf
                                                 <button class="px-2.5 py-1 rounded bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-bold transition">
-                                                    አጥፋ
+                                                    🗑️ አጥፋ
                                                 </button>
                                             </form>
                                         </div>
@@ -330,7 +339,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="p-6 text-center text-slate-500">ምንም የተመዘገበ ማስታወቂያ የለም።</td>
+                                    <td colspan="5" class="p-6 text-center text-slate-500">ምንም የተመዘገበ ማስታወቂያ የለም።</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -339,6 +348,61 @@
             </div>
 
         </main>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- EDIT AD MODAL (የማስታወቂያ ማስተካከያ ሞዳል) -->
+    <!-- ============================================================== -->
+    <div x-show="editModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl"
+             @click.away="editModalOpen = false">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    ✏️ ማስታወቂያ ማስተካከያ (Edit Ad)
+                </h3>
+                <button @click="editModalOpen = false" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+            </div>
+
+            <form :action="'/superadmin/ads/' + editAd.id + '/update'" method="POST" enctype="multipart/form-data" class="space-y-3 text-xs">
+                @csrf
+                <div>
+                    <label class="block text-slate-300 mb-1 font-semibold">የማስታወቂያ ርዕስ</label>
+                    <input type="text" name="title" x-model="editAd.title" required 
+                           class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 mb-1 font-semibold">የሚወስደው ሊንክ / ስልክ</label>
+                    <input type="text" name="target_url" x-model="editAd.target_url" required 
+                           class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono">
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 mb-1 font-semibold">ዒላማ (የማሳያ ቦታ)</label>
+                    <select name="placement" x-model="editAd.placement" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white">
+                        <option value="all">ለሁሉም (ሰራተኞች + አድሚኖች)</option>
+                        <option value="employee_dashboard">ለሰራተኞች ዳሽቦርድ ብቻ</option>
+                        <option value="admin_dashboard">ለአድሚኖች ዳሽቦርድ ብቻ</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 mb-1 font-semibold">ፖስተሩን መቀየር ከፈለጉ ይምረጡ (አማራጭ)</label>
+                    <input type="file" name="ad_file" accept="image/*"
+                           class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:text-xs file:font-bold hover:file:bg-blue-500 cursor-pointer">
+                    <p class="text-[10px] text-slate-500 mt-1">አዲስ ፎቶ ካልመረጡ ነባሩ ፖስተር እንደነበረ ይቀጥላል።</p>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                    <button type="button" @click="editModalOpen = false" class="px-4 py-2 bg-slate-800 text-slate-300 font-semibold rounded-xl text-xs hover:bg-slate-700">
+                        ሰርዝ
+                    </button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-lg transition">
+                        ለውጦቹን መዝግብ / Save
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- POWERED BY MELA SOLUTION FOOTER -->
@@ -355,12 +419,12 @@
     <script>
         function adCarouselHandler(adsList) {
             return {
-                ads: adsList,
+                ads: adsList || [],
                 currentIndex: 0,
                 timer: null,
 
                 startTimer() {
-                    if (this.ads.length <= 1) return;
+                    if (!this.ads || this.ads.length <= 1) return;
                     this.timer = setInterval(() => {
                         this.currentIndex = (this.currentIndex + 1) % this.ads.length;
                     }, 4500); // 4.5 ሰከንድ
