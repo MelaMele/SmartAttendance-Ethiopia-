@@ -14,7 +14,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Noto Sans Ethiopic', sans-serif; }</style>
+    <style>
+        body { font-family: 'Noto Sans Ethiopic', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between pb-10">
 
@@ -45,18 +48,20 @@
         @if($activeAds->count() > 0)
             <div class="max-w-lg mx-auto p-4 pb-0" x-data="carouselBanner({{ $activeAds->toJson() }})" x-init="start()">
                 <div class="relative w-full h-32 bg-slate-950 rounded-2xl overflow-hidden border border-slate-700 shadow-lg">
-                    <a :href="'/ad-click/' + ads[idx].id" target="_blank" class="block w-full h-full relative">
-                        <img :src="ads[idx].banner_image" class="w-full h-full object-cover transition-opacity duration-700">
-                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent flex items-end p-3 justify-between">
-                            <div>
-                                <span class="px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-black rounded">ስፖንሰር</span>
-                                <p class="text-xs font-bold text-white mt-0.5" x-text="ads[idx].title"></p>
+                    <template x-if="ads && ads.length > 0">
+                        <a :href="'/ad-click/' + ads[idx]?.id" target="_blank" class="block w-full h-full relative">
+                            <img :src="ads[idx]?.banner_image" class="w-full h-full object-cover transition-opacity duration-700">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent flex items-end p-3 justify-between">
+                                <div>
+                                    <span class="px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-black rounded">ስፖንሰር</span>
+                                    <p class="text-xs font-bold text-white mt-0.5" x-text="ads[idx]?.title"></p>
+                                </div>
+                                <span class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg shadow">
+                                    ክፈት / ደውል 📞
+                                </span>
                             </div>
-                            <span class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg shadow">
-                                ክፈት / ደውል 📞
-                            </span>
-                        </div>
-                    </a>
+                        </a>
+                    </template>
                 </div>
             </div>
         @endif
@@ -79,7 +84,14 @@
                 </div>
             </div>
 
-            <!-- Notification Box -->
+            <!-- Flash Success / Error Messages -->
+            @if(session('success'))
+                <div class="p-3.5 bg-emerald-500/20 border border-emerald-500 text-emerald-200 rounded-xl text-xs font-semibold text-center">
+                    {{ session('success') }}
+                </div>
+            @endif
+
+            <!-- AJAX Notification Box -->
             <div x-show="message" x-cloak 
                  :class="isSuccess ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200' : 'bg-rose-500/20 border-rose-500 text-rose-200'"
                  class="p-3.5 rounded-xl border text-xs font-semibold transition text-center"
@@ -89,8 +101,8 @@
             <!-- Punch Card -->
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl text-center space-y-4">
                 <div class="flex justify-between items-center border-b border-slate-700 pb-3">
-                    <span class="text-xs text-slate-400">የስራ ሰዓት፡ <b class="text-white">{{ $setting->work_start_time }} - {{ $setting->work_end_time }}</b></span>
-                    <span class="text-xs text-blue-400 font-mono">100m Geofence</span>
+                    <span class="text-xs text-slate-400">የስራ ሰዓት፡ <b class="text-white">{{ $setting->work_start_time ?? '08:30:00' }} - {{ $setting->work_end_time ?? '17:00:00' }}</b></span>
+                    <span class="text-xs text-blue-400 font-mono">{{ $setting->allowed_radius_meters ?? 100 }}m Geofence</span>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
@@ -130,12 +142,70 @@
                 </div>
             </div>
 
-            <!-- Leave Status Tracker -->
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-md space-y-3">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                    📋 የፈቃድ ጥያቄዎቼ ሁኔታ (Leave Status)
-                </h3>
+            <!-- Announcements from Admin -->
+            @if(isset($announcements) && $announcements->count() > 0)
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-md space-y-2">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                        📢 ከአስተዳዳሪው የተላለፉ መልእክቶች
+                    </h3>
+                    @foreach($announcements as $ann)
+                        <div class="p-3 bg-slate-700/50 rounded-xl border border-slate-600/50 space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-white text-xs">{{ $ann->title }}</span>
+                                <span class="text-[10px] text-slate-400">{{ $ann->date_ec ?? $ann->created_at->format('M d') }}</span>
+                            </div>
+                            <p class="text-xs text-slate-300">{{ $ann->message }}</p>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
 
+            <!-- Leave Request Form Toggle -->
+            <div x-data="{ openLeaveForm: false }" class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-md space-y-3">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        📋 የፈቃድ ጥያቄዎቼ (Leave Requests)
+                    </h3>
+                    <button @click="openLeaveForm = !openLeaveForm" class="text-xs text-blue-400 font-bold hover:underline">
+                        <span x-show="!openLeaveForm">➕ አዲስ ፈቃድ ጠይቅ</span>
+                        <span x-show="openLeaveForm">✖ ዝጋ</span>
+                    </button>
+                </div>
+
+                <!-- Submit Leave Form -->
+                <div x-show="openLeaveForm" x-cloak class="p-3 bg-slate-900 rounded-xl border border-slate-700 space-y-2 text-xs">
+                    <form action="{{ route('employee.leave.submit') }}" method="POST" class="space-y-2.5">
+                        @csrf
+                        <div>
+                            <label class="block text-slate-400 mb-1">የፈቃድ አይነት</label>
+                            <select name="leave_type" required class="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white">
+                                <option value="የህመም ፈቃድ">የህመም ፈቃድ</option>
+                                <option value="አስቸኳይ ጉዳይ">አስቸኳይ ጉዳይ</option>
+                                <option value="ዓመታዊ ፈቃድ">ዓመታዊ ፈቃድ</option>
+                                <option value="ሌላ">ሌላ</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-slate-400 mb-1">የመነሻ ቀን</label>
+                                <input type="date" name="start_date_gc" required class="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 mb-1">የመጨረሻ ቀን</label>
+                                <input type="date" name="end_date_gc" required class="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">ምክንያት</label>
+                            <textarea name="reason" rows="2" required placeholder="የፈቃድ ምክንያቱን በአጭሩ ይግለጹ..." class="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white"></textarea>
+                        </div>
+                        <button type="submit" class="w-full py-2 bg-blue-600 hover:bg-blue-500 font-bold text-white rounded-lg transition">
+                            የፈቃድ ጥያቄውን ላክ
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Existing Leaves List -->
                 @forelse($myLeaves as $leave)
                     <div class="p-3 bg-slate-700/50 rounded-xl border border-slate-600/60 space-y-1.5 text-xs">
                         <div class="flex justify-between items-center">
@@ -177,12 +247,12 @@
 
     <!-- Carousel & GPS Logic Scripts -->
     <script>
-        function carouselBanner(ads) {
+        function carouselBanner(adsList) {
             return {
-                ads: ads,
+                ads: adsList || [],
                 idx: 0,
                 start() {
-                    if (this.ads.length > 1) {
+                    if (this.ads && this.ads.length > 1) {
                         setInterval(() => {
                             this.idx = (this.idx + 1) % this.ads.length;
                         }, 4500); // 4.5s
@@ -204,13 +274,16 @@
                 gpsLabel: 'ጂፒኤስ በማንበብ ላይ...',
                 earlyReason: '',
 
-                orgLat: {{ $setting->latitude }},
-                orgLng: {{ $setting->longitude }},
-                allowedRadius: {{ $setting->allowed_radius_meters }},
+                orgLat: {{ $setting->latitude ?? 9.030000 }},
+                orgLng: {{ $setting->longitude ?? 38.740000 }},
+                allowedRadius: {{ $setting->allowed_radius_meters ?? 100 }},
                 workEndTime: "{{ $setting->work_end_time ?? '17:00:00' }}",
 
                 initGps() {
-                    if (!navigator.geolocation) return;
+                    if (!navigator.geolocation) {
+                        this.gpsLabel = "ጂፒኤስ አይደገፍም";
+                        return;
+                    }
                     navigator.geolocation.watchPosition(
                         (pos) => {
                             this.userLat = pos.coords.latitude;
@@ -227,7 +300,9 @@
                                 this.gpsLabel = `⚠️ ከቢሮ ውጭ (${dist}m)`;
                             }
                         },
-                        (err) => { this.gpsLabel = "GPS ያብሩ"; },
+                        (err) => { 
+                            this.gpsLabel = "GPS ያብሩ"; 
+                        },
                         { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
                     );
                 },
@@ -256,17 +331,32 @@
                 punch(action) {
                     if (!this.userLat) return alert("ጂፒኤስ እስኪነበብ ይጠብቁ!");
                     this.loading = true;
+                    this.message = '';
                     fetch(action === 'check-in' ? "{{ route('employee.checkin') }}" : "{{ route('employee.checkout') }}", {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                        body: JSON.stringify({ latitude: this.userLat, longitude: this.userLng, early_reason: this.earlyReason })
+                        headers: { 
+                            'Content-Type': 'application/json', 
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}' 
+                        },
+                        body: JSON.stringify({ 
+                            latitude: this.userLat, 
+                            longitude: this.userLng, 
+                            early_reason: this.earlyReason 
+                        })
                     })
                     .then(res => res.json())
                     .then(data => {
                         this.loading = false;
                         this.message = data.message;
                         this.isSuccess = data.success;
-                        if (data.success) setTimeout(() => window.location.reload(), 1500);
+                        if (data.success) {
+                            setTimeout(() => window.location.reload(), 1500);
+                        }
+                    })
+                    .catch(err => {
+                        this.loading = false;
+                        this.message = "ስህተት ተፈጥሯል፤ እባክዎ በድጋሚ ይሞክሩ!";
+                        this.isSuccess = false;
                     });
                 }
             }
