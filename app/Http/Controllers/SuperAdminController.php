@@ -62,11 +62,14 @@ class SuperAdminController extends Controller
         $newStatus = $company->status === 'active' ? 'suspended' : 'active';
         $company->update(['status' => $newStatus]);
 
-        $msg = $newStatus === 'suspended' ? "ድርጅቱ ({$company->company_name}) ታግዷል (Suspended)!" : "ድርጅቱ ({$company->company_name}) ነጻ ሆኗል (Activated)!";
+        $msg = $newStatus === 'suspended' 
+            ? "ድርጅቱ ({$company->company_name}) ታግዷል (Suspended)!" 
+            : "ድርጅቱ ({$company->company_name}) ነጻ ሆኗል (Activated)!";
+
         return back()->with('success', $msg);
     }
 
-    // አዲስ ፖስተር መጫኛ (GD ሳያስፈልገው 100% Fail-Proof Base64)
+    // አዲስ ፖስተር መጫኛ (GD ሳያስፈልገው 100% Fail-Proof Base64 Data URI)
     public function storeAd(Request $request)
     {
         $request->validate([
@@ -74,13 +77,13 @@ class SuperAdminController extends Controller
             'target_url'   => 'nullable|string',
             'phone_number' => 'nullable|string',
             'placement'    => 'required|in:employee_dashboard,admin_dashboard,all',
-            'ad_file'      => 'nullable|file|mimes:jpeg,png,jpg,webp,gif|max:5120', // እስከ 5MB
-            'banner_image' => 'nullable|url',
+            'ad_file'      => 'nullable|file|mimes:jpeg,png,jpg,webp,gif|max:5120',
+            'banner_image' => 'nullable|string',
         ]);
 
         $imageUrl = $request->banner_image;
 
-        // ፎቶ ከተሰጠ በቀጥታ ወደ Data URI Base64 ይቀየራል (GD አይፈልግም)
+        // ፎቶ ከተሰጠ ወደ Base64 ይቀየራል (ለ Vercel Serverless አስተማማኝ ነው)
         if ($request->hasFile('ad_file')) {
             $file = $request->file('ad_file');
             $mime = $file->getMimeType();
@@ -89,7 +92,7 @@ class SuperAdminController extends Controller
         }
 
         if (!$imageUrl) {
-            return back()->with('error', 'እባክዎ የማስታወቂያ ፎቶ ይምረጡ!');
+            return back()->with('error', 'እባክዎ የማስታወቂያ ፎቶ ይምረጡ ወይም ሊንክ ያስገቡ!');
         }
 
         $targetAction = $request->target_url;
@@ -100,25 +103,65 @@ class SuperAdminController extends Controller
         Ad::create([
             'title'        => $request->title,
             'banner_image' => $imageUrl,
-            'target_url'   => $targetAction ?? '#',
+            'target_url'   => $targetAction ?: '#',
             'placement'    => $request->placement,
             'is_active'    => true,
+            'views_count'  => 0,
+            'clicks_count' => 0,
         ]);
 
         return back()->with('success', 'አዲስ ፖስተር በተሳካ ሁኔታ ተጭኗል!');
+    }
+
+    // ማስታወቂያ ማስተካከል (Edit / Update Ad)
+    public function updateAd(Request $request, $id)
+    {
+        $ad = Ad::findOrFail($id);
+
+        $request->validate([
+            'title'        => 'required|string|max:255',
+            'target_url'   => 'nullable|string',
+            'phone_number' => 'nullable|string',
+            'placement'    => 'required|in:employee_dashboard,admin_dashboard,all',
+            'ad_file'      => 'nullable|file|mimes:jpeg,png,jpg,webp,gif|max:5120',
+        ]);
+
+        $updateData = [
+            'title'     => $request->title,
+            'placement' => $request->placement,
+        ];
+
+        // አዲስ ፎቶ ከመረጠ ብቻ ምስሉ ይቀየራል
+        if ($request->hasFile('ad_file')) {
+            $file = $request->file('ad_file');
+            $mime = $file->getMimeType();
+            $data = file_get_contents($file->getRealPath());
+            $updateData['banner_image'] = 'data:' . $mime . ';base64,' . base64_encode($data);
+        }
+
+        if ($request->filled('phone_number')) {
+            $updateData['target_url'] = 'tel:' . preg_replace('/[^0-9+]/', '', $request->phone_number);
+        } elseif ($request->filled('target_url')) {
+            $updateData['target_url'] = $request->target_url;
+        }
+
+        $ad->update($updateData);
+
+        return back()->with('success', 'ማስታወቂያው በተሳካ ሁኔታ ተስተካክሏል!');
     }
 
     public function toggleAdStatus($id)
     {
         $ad = Ad::findOrFail($id);
         $ad->update(['is_active' => !$ad->is_active]);
-        return back()->with('success', 'የማስታወቂያው ሁኔታ ተቀይሯል!');
+        $statusText = $ad->is_active ? 'ነቁ ሆኗል' : 'ቆሟል';
+        return back()->with('success', "የማስታወቂያው ሁኔታ ({$statusText}) ተቀይሯል!");
     }
 
     public function deleteAd($id)
     {
         $ad = Ad::findOrFail($id);
         $ad->delete();
-        return back()->with('success', 'ማስታወቂያው ተሰርዟል!');
+        return back()->with('success', 'ማስታወቂያው በቋሚነት ተሰርዟል!');
     }
 }
