@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Attendance;
+use App\Models\Company;
 use App\Models\CompanySetting;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\Announcement;
+use App\Models\Ad;
 use App\Services\EthiopianCalendarService;
 use App\Services\GeoService;
 use Carbon\Carbon;
@@ -32,21 +34,28 @@ class EmployeePortalController extends Controller
         $rawPhone = trim($request->phone_number);
         $cleanPhone = substr(preg_replace('/[^0-9]/', '', $rawPhone), -9);
 
-        $employee = Employee::where(function ($query) use ($cleanPhone) {
-                $query->where('phone_number', 'LIKE', '%' . $cleanPhone)
-                      ->orWhere('phone_number', 'LIKE', '%0' . $cleanPhone);
+        $query = Employee::where(function ($q) use ($cleanPhone) {
+                $q->where('phone_number', 'LIKE', '%' . $cleanPhone)
+                  ->orWhere('phone_number', 'LIKE', '%0' . $cleanPhone);
             })
             ->where('access_code', trim($request->access_code))
-            ->where('is_active', true)
-            ->first();
+            ->where('is_active', true);
+
+        // ተጠቃሚው በኩባንያ ሊንክ (/c/{slug}) በኩል ከመጣ በዚያ ኩባንያ ብቻ መፈለግ
+        if (session('current_company_id')) {
+            $query->where('company_id', session('current_company_id'));
+        }
+
+        $employee = $query->first();
 
         if (!$employee) {
             return back()->with('error', 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ኮድ!')->withInput();
         }
 
         session([
-            'employee_id'   => $employee->id,
-            'employee_name' => $employee->full_name
+            'employee_id'        => $employee->id,
+            'employee_name'      => $employee->full_name,
+            'current_company_id' => $employee->company_id,
         ]);
         session()->save();
 
@@ -62,30 +71,59 @@ class EmployeePortalController extends Controller
 
         $employee = Employee::find($employeeId);
         if (!$employee) {
-            session()->forget('employee_id');
+            session()->forget(['employee_id', 'employee_name', 'current_company_id']);
             return redirect()->route('employee.login');
         }
 
-        $setting = CompanySetting::first() ?? new CompanySetting();
+        // የኩባንያውን ቅንብር መፈለግ (በመጀመሪያ ከ Company ሞዴል፣ ካልተገኘ ከ CompanySetting)
+        $setting = null;
+        if ($employee->company_id) {
+            $setting = Company::find($employee->company_id);
+        }
+        if (!$setting) {
+            $setting = CompanySetting::first() ?? (object)[
+                'company_name'          => 'Mela Solution',
+                'latitude'              => 9.030000,
+                'longitude'             => 38.740000,
+                'allowed_radius_meters' => 100,
+                'work_start_time'       => '08:30:00',
+                'work_end_time'         => '17:00:00',
+            ];
+        }
+
         $todayGc = Carbon::today('Africa/Addis_Ababa')->toDateString();
         $todayEc = EthiopianCalendarService::todayText();
 
+        // የዛሬ የአቴንዳንስ መረጃ
         $todayAttendance = Attendance::where('employee_id', $employee->id)
             ->where('date_gc', $todayGc)
             ->first();
 
-        // ለዚህ ሰራተኛ ለብቻው የተላከ ወይም አጠቃላይ ማስታወቂያ
-        $announcements = Announcement::whereNull('employee_id')
-            ->orWhere('employee_id', $employee->id)
+        // ማስታወቂያዎች (ለዚህ ሰራተኛ ተለይቶ ወይም ለሁሉም የተላከ)
+        $announcements = Announcement::where(function ($query) use ($employee) {
+                $query->whereNull('employee_id')
+                      ->orWhere('employee_id', $employee->id);
+            })
+            ->when($employee->company_id, function($q) use ($employee) {
+                $q->where(function($sub) use ($employee) {
+                    $sub->where('company_id', $employee->company_id)
+                        ->orWhereNull('company_id');
+                });
+            })
             ->latest()
             ->take(5)
             ->get();
 
-        // የሰራተኛው የፈቃድ ጥያቄዎች ሁኔታ (የመጨረሻዎቹ 5)
+        // የፈቃድ ጥያቄዎች ሁኔታ
         $myLeaves = LeaveRequest::where('employee_id', $employee->id)
             ->latest()
             ->take(5)
             ->get();
+
+        // በሰራተኞች ገጽ ላይ ለሚታዩ ማስታወቂያዎች እይታን (Views Count) መቁጠር
+        Ad::where('is_active', true)
+            ->whereIn('placement', ['employee_dashboard', 'all'])
+            ->increment('views_count');
 
         return view('employee.dashboard', compact(
             'employee', 'setting', 'todayGc', 'todayEc',
@@ -101,14 +139,24 @@ class EmployeePortalController extends Controller
         ]);
 
         $employeeId = session('employee_id');
-        $setting = CompanySetting::first() ?? CompanySetting::create([
-            'company_name' => 'Mela Solution',
-            'latitude' => 9.030000,
-            'longitude' => 38.740000,
-            'allowed_radius_meters' => 100,
-            'work_start_time' => '08:30:00',
-            'work_end_time' => '17:00:00',
-        ]);
+        $employee = Employee::find($employeeId);
+
+        if (!$employee) {
+            return response()->json(['success' => false, 'message' => 'እባክዎ መጀመሪያ ይግቡ!'], 401);
+        }
+
+        $setting = null;
+        if ($employee->company_id) {
+            $setting = Company::find($employee->company_id);
+        }
+        if (!$setting) {
+            $setting = CompanySetting::first() ?? (object)[
+                'latitude'              => 9.030000,
+                'longitude'             => 38.740000,
+                'allowed_radius_meters' => 100,
+                'work_start_time'       => '08:30:00',
+            ];
+        }
 
         $distance = GeoService::calculateDistanceInMeters(
             $request->latitude,
@@ -117,49 +165,69 @@ class EmployeePortalController extends Controller
             $setting->longitude
         );
 
-        if ($distance > $setting->allowed_radius_meters) {
+        $allowedRadius = $setting->allowed_radius_meters ?? 100;
+        if ($distance > $allowedRadius) {
             return response()->json([
                 'success' => false,
-                'message' => "ከተፈቀደው 100 ሜትር ክልል ውጭ ነዎት! (አሁን በ {$distance} ሜትር ርቀት ላይ ነዎት)"
+                'message' => "ከተፈቀደው {$allowedRadius} ሜትር ክልል ውጭ ነዎት! (አሁን በ {$distance} ሜትር ርቀት ላይ ነዎት)"
             ], 422);
         }
 
         $now = Carbon::now('Africa/Addis_Ababa');
         $todayGc = $now->toDateString();
-        $todayEc = EthiopianCalendarService::todayFormatted();
+        $ethData = EthiopianCalendarService::fromGregorian($todayGc);
 
         $workStartTime = Carbon::parse($setting->work_start_time ?? '08:30:00');
         $status = $now->format('H:i:s') > $workStartTime->format('H:i:s') ? 'late' : 'present';
 
-        Attendance::firstOrCreate(
-            ['employee_id' => $employeeId, 'date_gc' => $todayGc],
+        $attendance = Attendance::firstOrCreate(
+            ['employee_id' => $employee->id, 'date_gc' => $todayGc],
             [
-                'date_ec' => $todayEc,
-                'check_in_at' => $now,
-                'check_in_lat' => $request->latitude,
-                'check_in_lng' => $request->longitude,
+                'company_id'               => $employee->company_id,
+                'eth_month'                => $ethData['month'] ?? 1,
+                'eth_year'                 => $ethData['year'] ?? 2017,
+                'date_ec'                  => $ethData['formatted_text'] ?? EthiopianCalendarService::todayFormatted(),
+                'check_in_at'              => $now,
+                'check_in_lat'             => $request->latitude,
+                'check_in_lng'             => $request->longitude,
                 'check_in_distance_meters' => $distance,
-                'status' => $status
+                'status'                   => $status
             ]
         );
 
         return response()->json([
             'success' => true,
-            'message' => "Check-in በተሳካ ሁኔታ ተመዝግቧል! (ከቢሮ በ {$distance} ሜትር ርቀት ላይ ነዎት)",
-            'time' => $now->format('h:i A')
+            'message' => "Check-in በተሳካ ሁኔታ ተመዝግቧል! (" . ($status === 'late' ? 'አርፍደዋል' : 'በሰዓቱ ገብተዋል') . ")",
+            'time'    => $now->format('h:i A')
         ]);
     }
 
     public function checkOut(Request $request)
     {
         $request->validate([
-            'latitude'  => 'required|numeric',
-            'longitude' => 'required|numeric',
+            'latitude'     => 'required|numeric',
+            'longitude'    => 'required|numeric',
             'early_reason' => 'nullable|string'
         ]);
 
         $employeeId = session('employee_id');
-        $setting = CompanySetting::first();
+        $employee = Employee::find($employeeId);
+
+        if (!$employee) {
+            return response()->json(['success' => false, 'message' => 'እባክዎ መጀመሪያ ይግቡ!'], 401);
+        }
+
+        $setting = null;
+        if ($employee->company_id) {
+            $setting = Company::find($employee->company_id);
+        }
+        if (!$setting) {
+            $setting = CompanySetting::first() ?? (object)[
+                'latitude'              => 9.030000,
+                'longitude'             => 38.740000,
+                'allowed_radius_meters' => 100,
+            ];
+        }
 
         $distance = GeoService::calculateDistanceInMeters(
             $request->latitude,
@@ -168,17 +236,18 @@ class EmployeePortalController extends Controller
             $setting->longitude
         );
 
-        if ($distance > $setting->allowed_radius_meters) {
+        $allowedRadius = $setting->allowed_radius_meters ?? 100;
+        if ($distance > $allowedRadius) {
             return response()->json([
                 'success' => false,
-                'message' => "Check-out ለማድረግ በ 100 ሜትር ክልል ውስጥ መሆን አለብዎት!"
+                'message' => "Check-out ለማድረግ በ {$allowedRadius} ሜትር ክልል ውስጥ መሆን አለብዎት! (አሁን በ {$distance} ሜትር ርቀት ላይ ነዎት)"
             ], 422);
         }
 
         $now = Carbon::now('Africa/Addis_Ababa');
         $todayGc = $now->toDateString();
 
-        $attendance = Attendance::where('employee_id', $employeeId)
+        $attendance = Attendance::where('employee_id', $employee->id)
             ->where('date_gc', $todayGc)
             ->first();
 
@@ -190,18 +259,18 @@ class EmployeePortalController extends Controller
         }
 
         $attendance->update([
-            'check_out_at' => $now,
-            'check_out_lat' => $request->latitude,
-            'check_out_lng' => $request->longitude,
+            'check_out_at'              => $now,
+            'check_out_lat'             => $request->latitude,
+            'check_out_lng'             => $request->longitude,
             'check_out_distance_meters' => $distance,
-            'early_leave_reason' => $request->early_reason,
-            'early_leave_approved' => $request->early_reason ? false : null,
+            'early_leave_reason'        => $request->early_reason,
+            'early_leave_approved'      => $request->early_reason ? false : null,
         ]);
 
         return response()->json([
             'success' => true,
             'message' => "Check-out በተሳካ ሁኔታ ተመዝግቧል! ደህና ይደሩ።",
-            'time' => $now->format('h:i A')
+            'time'    => $now->format('h:i A')
         ]);
     }
 
@@ -214,13 +283,16 @@ class EmployeePortalController extends Controller
             'reason'        => 'required|string',
         ]);
 
+        $employee = Employee::findOrFail(session('employee_id'));
+
         LeaveRequest::create([
-            'employee_id'   => session('employee_id'),
+            'employee_id'   => $employee->id,
+            'company_id'    => $employee->company_id,
             'leave_type'    => $request->leave_type,
             'start_date_gc' => $request->start_date_gc,
-            'start_date_ec' => EthiopianCalendarService::fromGregorian($request->start_date_gc)['formatted_text'],
+            'start_date_ec' => EthiopianCalendarService::fromGregorian($request->start_date_gc)['formatted_text'] ?? $request->start_date_gc,
             'end_date_gc'   => $request->end_date_gc,
-            'end_date_ec'   => EthiopianCalendarService::fromGregorian($request->end_date_gc)['formatted_text'],
+            'end_date_ec'   => EthiopianCalendarService::fromGregorian($request->end_date_gc)['formatted_text'] ?? $request->end_date_gc,
             'reason'        => $request->reason,
             'status'        => 'pending'
         ]);
@@ -230,8 +302,7 @@ class EmployeePortalController extends Controller
 
     public function logout()
     {
-        session()->forget(['employee_id', 'employee_name']);
-        session()->flush();
+        session()->forget(['employee_id', 'employee_name', 'current_company_id']);
         return redirect()->route('employee.login');
     }
 }
